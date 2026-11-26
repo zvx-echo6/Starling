@@ -5,9 +5,10 @@ import PythonRuntimeShim
 /// CoreBluetooth transport for the iOS `_starling_ble_ios` callback ABI. All
 /// CoreBluetooth state and callbacks are confined to `queue`; Python drains
 /// immutable JSON events separately.
-final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, CBPeripheralManagerDelegate {
+// Mutable CoreBluetooth state is accessed only on `queue`; synchronous callback
+// entry points marshal all stateful work onto that queue.
+final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, CBPeripheralManagerDelegate, @unchecked Sendable {
     static let shared = StarlingBLEPeerBridge()
-    private static let ccc = CBUUID(string: "2902")
     private let queue = DispatchQueue(label: "com.sidpatchy.Starling.peer-ble")
     private var central: CBCentralManager!
     private var peripheralManager: CBPeripheralManager!
@@ -48,12 +49,19 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
     private override init() { super.init() }
 
     func registerCallbacks() {
-        var callbacks = StarlingBLECallbacks(start: Self.startCallback, set_identity: Self.setIdentityCallback, stop: Self.stopCallback,
-            start_scanning: Self.startScanningCallback, stop_scanning: Self.stopScanningCallback,
-            start_advertising: Self.startAdvertisingCallback, stop_advertising: Self.stopAdvertisingCallback,
-            connect: Self.connectCallback, disconnect: Self.disconnectCallback,
-            write: Self.writeCallback, notify: Self.notifyCallback,
-            drain_events: Self.drainCallback, free_buffer: Self.freeCallback)
+        var callbacks = StarlingBLECallbacks(start: { p, n, e, en in Self.startCallback(p, n, e, en) },
+            set_identity: { p, n, e, en in Self.setIdentityCallback(p, n, e, en) },
+            stop: { e, n in Self.stopCallback(e, n) },
+            start_scanning: { e, n in Self.startScanningCallback(e, n) },
+            stop_scanning: { e, n in Self.stopScanningCallback(e, n) },
+            start_advertising: { e, n in Self.startAdvertisingCallback(e, n) },
+            stop_advertising: { e, n in Self.stopAdvertisingCallback(e, n) },
+            connect: { p, n, e, en in Self.connectCallback(p, n, e, en) },
+            disconnect: { p, n, e, en in Self.disconnectCallback(p, n, e, en) },
+            write: { a, an, b, bn, e, en in Self.writeCallback(a, an, b, bn, e, en) },
+            notify: { a, an, b, bn, e, en in Self.notifyCallback(a, an, b, bn, e, en) },
+            drain_events: { out, n, e, en in Self.drainCallback(out, n, e, en) },
+            free_buffer: { p in Self.freeCallback(p) })
         StarlingBLERegisterCallbacks(&callbacks)
     }
 
@@ -129,7 +137,7 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
     private func addr(_ p: CBPeripheral) -> String { "central:" + p.identifier.uuidString }
     private func peripheralAddr(_ id: UUID) -> String { "peripheral:" + id.uuidString }
 
-    func centralManagerDidUpdateState(_ central: CBCentralManager) { guard running, self.central === central else { return }; emit("adapter_state", extra: ["enabled": central.state == .poweredOn]); if central.state == .poweredOn { beginScan() } else if central.state != .unknown && central.state != .resetting { scanning = false; pendingConnections.removeAll(); connectionGenerations.removeAll(); peers.removeAll(); peripherals.removeAll(); subscribed.removeAll(); subscribedCentrals.removeAll(); pendingNotifications.removeAll(); emit("error", extra: ["severity": "error", "message": "Bluetooth is unavailable"]) } }
+    func centralManagerDidUpdateState(_ central: CBCentralManager) { guard running, self.central === central else { return }; emit("adapter_state", ["enabled": central.state == .poweredOn]); if central.state == .poweredOn { beginScan() } else if central.state != .unknown && central.state != .resetting { scanning = false; pendingConnections.removeAll(); connectionGenerations.removeAll(); peers.removeAll(); peripherals.removeAll(); subscribed.removeAll(); subscribedCentrals.removeAll(); pendingNotifications.removeAll(); emit("error", nil, ["severity": "error", "message": "Bluetooth is unavailable"]) } }
     func centralManager(_ central: CBCentralManager, didDiscover p: CBPeripheral, advertisementData: [String: Any], rssi: NSNumber) { guard running, self.central === central else { return }; let a = addr(p); peripherals[a] = p; emit("discovered", a, ["name": advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? NSNull(), "rssi": rssi.intValue]) }
     func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) { guard running, self.central === central else { return }; let a = addr(p); guard pendingConnections.contains(a) else { central.cancelPeripheralConnection(p); return }; pendingConnections.remove(a); connectionGenerations.removeValue(forKey: a); p.delegate = self; peers[a] = Peer(peripheral: p, mtu: p.maximumWriteValueLength(for: .withResponse)); p.discoverServices([service]) }
     func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) { guard running, self.central === central, peripherals[addr(p)] === p, pendingConnections.contains(addr(p)) else { return }; let a = addr(p); pendingConnections.remove(a); emit("connect_failed", a, ["message": error?.localizedDescription ?? "connection failed", "timed_out": false]) }
@@ -137,7 +145,7 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
     private func isCurrent(_ p: CBPeripheral) -> Bool { guard running, let peer = peers[addr(p)] else { return false }; return peer.peripheral === p }
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard error == nil, let s = p.services?.first(where: { $0.uuid == service }) else { failLink(a, error?.localizedDescription ?? "peer service missing"); return }; p.discoverCharacteristics([rx, tx, identityUUID], for: s) }
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard error == nil, let chars = s.characteristics, let r = chars.first(where: { $0.uuid == rx }), let t = chars.first(where: { $0.uuid == tx }), let i = chars.first(where: { $0.uuid == identityUUID }), var peer = peers[a] else { failLink(a, error?.localizedDescription ?? "peer characteristics missing"); return }; peer.rx = r; peer.tx = t; peer.identity = i; peers[a] = peer; p.readValue(for: i) }
-    func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard error == nil, let data = c.value, var peer = peers[a] else { if let error { failLink(addr(p), error.localizedDescription) }; return }; if c.uuid == identityUUID { peer.remoteIdentity = data; peers[a] = peer; emit("identity_read", a, ["identity": data.base64EncodedString()]); p.setDesiredConnectionLatency(.low, for: .peripheral); p.setNotifyValue(true, for: peer.tx!); emit("mtu_changed", a, ["payload_size": max(20, p.maximumWriteValueLength(for: .withResponse))]) } else if c.uuid == tx { emit("data", a, ["data": data.base64EncodedString()]) } }
+    func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard error == nil, let data = c.value, var peer = peers[a] else { if let error { failLink(addr(p), error.localizedDescription) }; return }; if c.uuid == identityUUID { peer.remoteIdentity = data; peers[a] = peer; emit("identity_read", a, ["identity": data.base64EncodedString()]); if let txCharacteristic = peer.tx { p.setNotifyValue(true, for: txCharacteristic) }; emit("mtu_changed", a, ["payload_size": max(20, p.maximumWriteValueLength(for: .withResponse))]) } else if c.uuid == tx { emit("data", a, ["data": data.base64EncodedString()]) } }
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard c.uuid == tx, error == nil, let peer = peers[a], let rxChar = peer.rx, !identity.isEmpty else { if let error { failLink(a, error.localizedDescription) }; return }; p.writeValue(identity, for: rxChar, type: .withResponse) }
     func peripheral(_ p: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) { guard isCurrent(p) else { return }; let a = addr(p); guard c.uuid == rx else { return }; if let error { failLink(a, error.localizedDescription); return }; guard let peer = peers[a] else { return }; var ready = peer; ready.state = "ready"; peers[a] = ready; emit("connected", a, ["role": "central", "identity": peer.remoteIdentity?.base64EncodedString() as Any? ?? NSNull(), "payload_size": max(20, p.maximumWriteValueLength(for: .withResponse))]) }
     func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) { guard running, self.peripheralManager === peripheral else { return }; guard peripheral.state == .poweredOn else { if peripheral.state != .unknown && peripheral.state != .resetting { pendingNotifications.removeAll(); txCharacteristic = nil; subscribed.removeAll(); subscribedCentrals.removeAll() }; return }; if advertisingRequested { configurePeripheral(peripheral) } }
