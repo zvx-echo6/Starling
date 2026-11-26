@@ -1,0 +1,228 @@
+name: Starling development-signed device IPA
+
+# Fork-only workflow: add the IOS_DEV_* signing secrets to a fork before running.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-device-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.repository.fork == true
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust for iOS cryptography
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install xtool
+        run: brew install xtool-org/tap/xtool
+
+      - name: Resolve Apple toolchain versions for caches
+        id: ios-toolchain
+        shell: bash
+        run: |
+          echo "xcode=$(xcodebuild -version | sed -n '1s/^Xcode //p')" >> "$GITHUB_OUTPUT"
+          echo "sdk=$(xcrun --sdk iphoneos --show-sdk-version)" >> "$GITHUB_OUTPUT"
+          echo "rust=$(rustc --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore embedded Python runtime cache
+        id: ios-python-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            iosApp/Vendor/Python.xcframework
+            iosApp/Sources/Starling/PythonModules/ios-device
+            iosApp/Sources/Starling/PythonModules/ios-simulator
+          key: ios-python-v1-${{ runner.os }}-${{ runner.arch }}-xcode${{ steps.ios-toolchain.outputs.xcode }}-sdk${{ steps.ios-toolchain.outputs.sdk }}-rust${{ steps.ios-toolchain.outputs.rust }}-py313-${{ hashFiles('packaging/ios/prepare-python-runtime.sh', 'packaging/ios/build-ios-cryptography-wheels.sh', 'packaging/ios/patch-cryptography-ios-build.py', 'packaging/ios/prepare-pyo3-cross-lib.py', 'packaging/ios/test-embedded-python.py', 'composeApp/src/main/python/**', 'licenses/**') }}
+
+      - name: Prepare embedded iOS Python runtime
+        if: steps.ios-python-cache.outputs.cache-hit != 'true'
+        run: bash packaging/ios/prepare-python-runtime.sh
+
+      - name: Save embedded Python runtime cache
+        if: steps.ios-python-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            iosApp/Vendor/Python.xcframework
+            iosApp/Sources/Starling/PythonModules/ios-device
+            iosApp/Sources/Starling/PythonModules/ios-simulator
+          key: ${{ steps.ios-python-cache.outputs.cache-primary-key }}
+
+      - name: Restore release Compose framework cache
+        id: ios-compose-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: composeApp/build/XCFrameworks/release/composeApp.xcframework
+          key: ios-compose-release-v1-${{ runner.os }}-${{ runner.arch }}-xcode${{ steps.ios-toolchain.outputs.xcode }}-sdk${{ steps.ios-toolchain.outputs.sdk }}-${{ hashFiles('composeApp/src/commonMain/**', 'composeApp/src/iosMain/**', 'composeApp/build.gradle.kts', 'build.gradle.kts', 'settings.gradle.kts', 'gradle/libs.versions.toml', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build release Compose iOS framework
+        if: steps.ios-compose-cache.outputs.cache-hit != 'true'
+        run: ./gradlew --no-daemon :composeApp:assembleComposeAppReleaseXCFramework
+
+      - name: Verify shared Compose framework
+        run: test -f composeApp/build/XCFrameworks/release/composeApp.xcframework/Info.plist
+
+      - name: Save release Compose framework cache
+        if: steps.ios-compose-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: composeApp/build/XCFrameworks/release/composeApp.xcframework
+          key: ${{ steps.ios-compose-cache.outputs.cache-primary-key }}
+
+      - name: Install development signing material
+        env:
+          IOS_DEV_P12_B64: ${{ secrets.IOS_DEV_P12_B64 }}
+          IOS_DEV_PROFILE_B64: ${{ secrets.IOS_DEV_PROFILE_B64 }}
+          IOS_DEV_P12_PASSWORD: ${{ secrets.IOS_DEV_P12_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in IOS_DEV_P12_B64 IOS_DEV_PROFILE_B64 IOS_DEV_P12_PASSWORD; do
+            if [[ -z "${!key}" ]]; then echo "::error::Missing required secret: $key"; exit 1; fi
+          done
+          umask 077
+          work="$RUNNER_TEMP/starling-signing"
+          mkdir -m 700 "$work"
+          keychain="$RUNNER_TEMP/starling-device.keychain-db"
+          keychain_password="$(uuidgen)"
+          printf '%s' "$IOS_DEV_P12_B64" | base64 -D > "$work/development.p12"
+          printf '%s' "$IOS_DEV_PROFILE_B64" | base64 -D > "$work/profile.mobileprovision"
+          security cms -D -i "$work/profile.mobileprovision" > "$work/profile.plist"
+          python3 -I - "$work/profile.plist" "$GITHUB_OUTPUT" <<'PY'
+          import plistlib, sys
+          profile = plistlib.load(open(sys.argv[1], "rb"))
+          entitlements = profile.get("Entitlements", {})
+          app_id = entitlements.get("application-identifier", "")
+          prefix, sep, bundle_id = app_id.partition(".")
+          if not sep or bundle_id != "com.happylittle.starling":
+              raise SystemExit("Provisioning profile application identifier does not match com.happylittle.starling")
+          if entitlements.get("get-task-allow") is not True:
+              raise SystemExit("Provisioning profile is not a development profile")
+          team_ids = profile.get("TeamIdentifier", [])
+          if not team_ids or prefix not in team_ids:
+              raise SystemExit("Provisioning profile team identifier is missing or inconsistent")
+          with open(sys.argv[2], "a") as out:
+              for key, value in (("profile_uuid", profile["UUID"]), ("profile_name", profile["Name"]), ("team_id", prefix), ("bundle_id", bundle_id)):
+                  out.write(f"{key}={value}\n")
+          PY
+          profile_uuid="$(/usr/libexec/PlistBuddy -c 'Print UUID' "$work/profile.plist")"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$work/development.p12" -P "$IOS_DEV_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain"
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/"Apple Development:/ { print $2; exit }')"
+          if [[ -z "$identity" ]]; then echo '::error::No Apple Development signing identity found in the supplied certificate.'; exit 1; fi
+          echo "signing_identity=$identity" >> "$GITHUB_OUTPUT"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$work/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+          echo "profile_path=$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision" >> "$GITHUB_OUTPUT"
+        id: profile
+
+      - name: Generate release Xcode project
+        env:
+          STARLING_COMPOSE_CONFIGURATION: release
+        run: xtool dev generate-xcode-project
+
+      - name: Build app with development signing
+        env:
+          STARLING_COMPOSE_CONFIGURATION: release
+          TEAM_ID: ${{ steps.profile.outputs.team_id }}
+          BUNDLE_ID: ${{ steps.profile.outputs.bundle_id }}
+          PROFILE_NAME: ${{ steps.profile.outputs.profile_name }}
+          SIGNING_IDENTITY: ${{ steps.profile.outputs.signing_identity }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          derived_data="$RUNNER_TEMP/StarlingDerivedData"
+          xcodebuild \
+            -project xtool/.xtool-tmp/Starling.xcodeproj \
+            -scheme Starling-App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath "$derived_data" \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" DEVELOPMENT_TEAM="$TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" build
+          product_directory="$derived_data/Build/Products/Release-iphoneos"
+          app_path="$(find "$product_directory" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$app_path"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$app_path/Info.plist"
+          mkdir -p artifacts
+          bash packaging/ios/package-python-app.sh "$app_path" artifacts/Starling-development.ipa
+          temp="$RUNNER_TEMP/starling-package"
+          mkdir -p "$temp"
+          ditto -x -k artifacts/Starling-development.ipa "$temp"
+          app_path="$(find "$temp/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$app_path"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$app_path/Info.plist"
+          security cms -D -i "$RUNNER_TEMP/starling-signing/profile.mobileprovision" > "$RUNNER_TEMP/starling-signing/profile.plist"
+          /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$RUNNER_TEMP/starling-signing/profile.plist" > "$RUNNER_TEMP/starling-signing/entitlements.plist"
+          cp "$RUNNER_TEMP/starling-signing/profile.mobileprovision" "$app_path/embedded.mobileprovision"
+          codesign --force --deep --sign "$SIGNING_IDENTITY" --entitlements "$RUNNER_TEMP/starling-signing/entitlements.plist" "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          ditto -c -k --sequesterRsrc --keepParent "$temp/Payload" artifacts/Starling-development.ipa
+
+      - name: Verify signed IPA
+        env:
+          EXPECTED_BUNDLE_ID: ${{ steps.profile.outputs.bundle_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          temp="$RUNNER_TEMP/starling-ipa-verify"
+          mkdir -p "$temp"
+          ditto -x -k artifacts/Starling-development.ipa "$temp"
+          app_path="$(find "$temp/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+          test -n "$app_path"
+          actual_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
+          [[ "$actual_bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
+          test -s "$app_path/embedded.mobileprovision"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          codesign -dvv "$app_path" 2> "$temp/signature.txt"
+          grep -F "Authority=Apple Development:" "$temp/signature.txt"
+          security cms -D -i "$app_path/embedded.mobileprovision" > "$temp/profile.plist"
+          profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$temp/profile.plist")
+          profile_bundle_id="${profile_app_id#*.}"
+          [[ "$profile_bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
+          echo "Verified development-signed IPA for $actual_bundle_id."
+
+      - name: Upload signed IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: starling-development-signed-ipa
+          path: artifacts/Starling-development.ipa
+          if-no-files-found: error
+
+      - name: Remove development signing material
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/starling-device.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/starling-signing" "$RUNNER_TEMP/starling-package" "$RUNNER_TEMP/starling-ipa-verify"
+          rm -f "${{ steps.profile.outputs.profile_path }}"
