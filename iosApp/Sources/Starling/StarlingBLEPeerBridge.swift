@@ -114,22 +114,7 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
     private override init() { super.init() }
 
     func registerCallbacks() {
-        var callbacks = StarlingBLECallbacks(
-            start: starlingBLEStartCallback,
-            set_identity: starlingBLESetIdentityCallback,
-            stop: starlingBLEStopCallback,
-            start_scanning: starlingBLEStartScanningCallback,
-            stop_scanning: starlingBLEStopScanningCallback,
-            start_advertising: starlingBLEStartAdvertisingCallback,
-            stop_advertising: starlingBLEStopAdvertisingCallback,
-            connect: starlingBLEConnectCallback,
-            disconnect: starlingBLEDisconnectCallback,
-            write: starlingBLEWriteCallback,
-            notify: starlingBLENotifyCallback,
-            drain_events: starlingBLEDrainCallback,
-            free_buffer: starlingBLEFreeCallback
-        )
-        StarlingBLERegisterCallbacks(&callbacks)
+        StarlingBLEInstallSwiftCallbacks()
     }
 
     fileprivate static func startCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
