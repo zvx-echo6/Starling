@@ -138,8 +138,8 @@ jobs:
           security import "$work/development.p12" -P "$IOS_DEV_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
           security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain"
-          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/"Apple Development:/ { print $2; exit }')"
-          if [[ -z "$identity" ]]; then echo '::error::No Apple Development signing identity found in the supplied certificate.'; exit 1; fi
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/"(Apple Development|iPhone Developer):/ { print $2; exit }')"
+          if [[ -z "$identity" ]]; then echo '::error::No Apple Development or iPhone Developer signing identity found in the supplied certificate.'; exit 1; fi
           echo "signing_identity=$identity" >> "$GITHUB_OUTPUT"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$work/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
@@ -205,7 +205,7 @@ jobs:
           test -s "$app_path/embedded.mobileprovision"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           codesign -dvv "$app_path" 2> "$temp/signature.txt"
-          grep -F "Authority=Apple Development:" "$temp/signature.txt"
+          grep -E 'Authority=(Apple Development|iPhone Developer):' "$temp/signature.txt"
           security cms -D -i "$app_path/embedded.mobileprovision" > "$temp/profile.plist"
           profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$temp/profile.plist")
           profile_bundle_id="${profile_app_id#*.}"
