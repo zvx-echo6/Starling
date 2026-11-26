@@ -2,77 +2,12 @@ import CoreBluetooth
 import Foundation
 import PythonRuntimeShim
 
-@_cdecl("StarlingSwiftBLEStartCallback")
-public func starlingBLEStartCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.startCallback(p, n, e, en)
-}
-
-@_cdecl("StarlingSwiftBLESetIdentityCallback")
-public func starlingBLESetIdentityCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.setIdentityCallback(p, n, e, en)
-}
-
-@_cdecl("StarlingSwiftBLEStopCallback")
-public func starlingBLEStopCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.stopCallback(e, n)
-}
-
-@_cdecl("StarlingSwiftBLEStartScanningCallback")
-public func starlingBLEStartScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.startScanningCallback(e, n)
-}
-
-@_cdecl("StarlingSwiftBLEStopScanningCallback")
-public func starlingBLEStopScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.stopScanningCallback(e, n)
-}
-
-@_cdecl("StarlingSwiftBLEStartAdvertisingCallback")
-public func starlingBLEStartAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.startAdvertisingCallback(e, n)
-}
-
-@_cdecl("StarlingSwiftBLEStopAdvertisingCallback")
-public func starlingBLEStopAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.stopAdvertisingCallback(e, n)
-}
-
-@_cdecl("StarlingSwiftBLEConnectCallback")
-public func starlingBLEConnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.connectCallback(p, n, e, en)
-}
-
-@_cdecl("StarlingSwiftBLEDisconnectCallback")
-public func starlingBLEDisconnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.disconnectCallback(p, n, e, en)
-}
-
-@_cdecl("StarlingSwiftBLEWriteCallback")
-public func starlingBLEWriteCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.writeCallback(a, an, b, bn, e, en)
-}
-
-@_cdecl("StarlingSwiftBLENotifyCallback")
-public func starlingBLENotifyCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.notifyCallback(a, an, b, bn, e, en)
-}
-
-@_cdecl("StarlingSwiftBLEDrainCallback")
-public func starlingBLEDrainCallback(_ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-    StarlingBLEPeerBridge.drainCallback(out, n, e, en)
-}
-
-@_cdecl("StarlingSwiftBLEFreeCallback")
-public func starlingBLEFreeCallback(_ p: UnsafeMutablePointer<UInt8>?) {
-    StarlingBLEPeerBridge.freeCallback(p)
-}
-
 /// CoreBluetooth transport for the iOS `_starling_ble_ios` callback ABI. All
 /// CoreBluetooth state and callbacks are confined to `queue`; Python drains
 /// immutable JSON events separately.
 // Mutable CoreBluetooth state is accessed only on `queue`; synchronous callback
 // entry points marshal all stateful work onto that queue.
-final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, CBPeripheralManagerDelegate, @unchecked Sendable {
+final class StarlingBLEPeerBridge: NSObject, StarlingBLEProvider, CBCentralManagerDelegate, CBPeripheralDelegate, CBPeripheralManagerDelegate, @unchecked Sendable {
     static let shared = StarlingBLEPeerBridge()
     private let queue = DispatchQueue(label: "com.sidpatchy.Starling.peer-ble")
     private var central: CBCentralManager!
@@ -113,52 +48,35 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
 
     private override init() { super.init() }
 
-    func registerCallbacks() {
-        StarlingBLEInstallSwiftCallbacks(
-            starlingBLEStartCallback,
-            starlingBLESetIdentityCallback,
-            starlingBLEStopCallback,
-            starlingBLEStartScanningCallback,
-            starlingBLEStopScanningCallback,
-            starlingBLEStartAdvertisingCallback,
-            starlingBLEStopAdvertisingCallback,
-            starlingBLEConnectCallback,
-            starlingBLEDisconnectCallback,
-            starlingBLEWriteCallback,
-            starlingBLENotifyCallback,
-            starlingBLEDrainCallback,
-            starlingBLEFreeCallback
-        )
+    func registerCallbacks() { StarlingBLERegisterProvider(self) }
+
+    func performBLEOperation(_ operation: String, arguments: [Data]) -> NSDictionary {
+        func response(_ error: String? = nil, data: Data = Data()) -> NSDictionary {
+            if let error { return ["error": error] }
+            return ["data": data]
+        }
+        let first = arguments.first ?? Data()
+        switch operation {
+        case "start":
+            guard let config = try? JSONSerialization.jsonObject(with: first) as? [String: Any] else { return response("invalid BLE start configuration") }
+            return response(shared.start(config))
+        case "set_identity": return response(first.count == 16 ? shared.setIdentity(first) : "identity must be exactly 16 bytes")
+        case "stop": shared.stop(); return response()
+        case "start_scanning": return response(shared.setScanning(true))
+        case "stop_scanning": return response(shared.setScanning(false))
+        case "start_advertising": return response(shared.setAdvertising(true))
+        case "stop_advertising": return response(shared.setAdvertising(false))
+        case "connect": return response(shared.connect(String(decoding: first, as: UTF8.self)))
+        case "disconnect": shared.disconnect(String(decoding: first, as: UTF8.self)); return response()
+        case "write": return response(shared.write(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
+        case "notify": return response(shared.notify(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
+        case "drain_events":
+            let data = (try? JSONSerialization.data(withJSONObject: shared.drain(), options: [.fragmentsAllowed])) ?? Data("[]".utf8)
+            return response(nil, data: data)
+        default: return response("unknown BLE operation")
+        }
     }
 
-    fileprivate static func startCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-        guard let data = p.map({ Data(bytes: $0, count: n) }), let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return fail("invalid BLE start configuration", e, en) }
-        return result(shared.start(config), e, en)
-    }
-    fileprivate static func stopCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { shared.stop(); return 1 }
-    fileprivate static func startScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { result(shared.setScanning(true), e, n) }
-    fileprivate static func stopScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { result(shared.setScanning(false), e, n) }
-    fileprivate static func startAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { result(shared.setAdvertising(true), e, n) }
-    fileprivate static func stopAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { result(shared.setAdvertising(false), e, n) }
-    fileprivate static func setIdentityCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-        guard n == 16, let p else { return fail("identity must be exactly 16 bytes", e, en) }
-        return result(shared.setIdentity(Data(bytes: p, count: n)), e, en)
-    }
-    fileprivate static func connectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 { result(shared.connect(shared.string(p, n)), e, en) }
-    fileprivate static func disconnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 { shared.disconnect(shared.string(p, n)); return 1 }
-    fileprivate static func writeCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 { guard let data = bytes(b, bn) else { return fail("invalid BLE write buffer", e, en) }; return result(shared.write(shared.string(a, an), data), e, en) }
-    fileprivate static func notifyCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 { guard let data = bytes(b, bn) else { return fail("invalid BLE notification buffer", e, en) }; return result(shared.notify(shared.string(a, an), data), e, en) }
-    fileprivate static func drainCallback(_ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
-        let data = (try? JSONSerialization.data(withJSONObject: shared.drain(), options: [.fragmentsAllowed])) ?? Data("[]".utf8)
-        out?.pointee = allocate(data); n?.pointee = data.count; return 1
-    }
-    private static func allocate(_ data: Data) -> UnsafeMutablePointer<UInt8>? { let p = malloc(max(1, data.count))!.assumingMemoryBound(to: UInt8.self); data.copyBytes(to: p, count: data.count); return p }
-    private static func bytes(_ p: UnsafePointer<UInt8>?, _ n: Int) -> Data? { guard n >= 0 else { return nil }; if n == 0 { return Data() }; guard let p else { return nil }; return Data(bytes: p, count: n) }
-    fileprivate static func freeCallback(_ p: UnsafeMutablePointer<UInt8>?) { if let p { free(p) } }
-    private static func fail(_ message: String, _ p: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { let d = Data(message.utf8); p?.pointee = allocate(d); n?.pointee = d.count; return 0 }
-    private static func result(_ message: String?, _ p: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 { message.map { fail($0, p, n) } ?? 1 }
-
-    private func string(_ p: UnsafePointer<UInt8>?, _ n: Int) -> String { guard let p else { return "" }; return String(decoding: UnsafeBufferPointer(start: p, count: n), as: UTF8.self) }
     private func sync<T>(_ work: () -> T) -> T { queue.sync(execute: work) }
     private func start(_ c: [String: Any]) -> String? { sync {
         stopOnQueue()

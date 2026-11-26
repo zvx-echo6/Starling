@@ -12,6 +12,11 @@ FOUNDATION_EXPORT NSString * _Nullable StarlingPythonInitialize(
 
 FOUNDATION_EXPORT NSString *StarlingPythonInvoke(NSString *command);
 
+@protocol StarlingBLEProvider <NSObject>
+- (NSDictionary<NSString *, id> *)performBLEOperation:(NSString *)operation
+                                            arguments:(NSArray<NSData *> *)arguments;
+@end
+
 typedef void (*StarlingBLEFreeBuffer)(uint8_t *buffer);
 typedef int (*StarlingBLEStringCallback)(const uint8_t *value, size_t value_length,
                                          uint8_t **error, size_t *error_length);
@@ -41,20 +46,6 @@ typedef struct {
 } StarlingBLECallbacks;
 
 FOUNDATION_EXPORT void StarlingBLERegisterCallbacks(const StarlingBLECallbacks * _Nullable callbacks);
-FOUNDATION_EXPORT void StarlingBLEInstallSwiftCallbacks(
-    StarlingBLEStringCallback start,
-    StarlingBLEIdentityCallback set_identity,
-    StarlingBLEVoidCallback stop,
-    StarlingBLEVoidCallback start_scanning,
-    StarlingBLEVoidCallback stop_scanning,
-    StarlingBLEVoidCallback start_advertising,
-    StarlingBLEVoidCallback stop_advertising,
-    StarlingBLEStringCallback connect,
-    StarlingBLEStringCallback disconnect,
-    StarlingBLEBytesCallback write,
-    StarlingBLEBytesCallback notify,
-    StarlingBLEDrainCallback drain_events,
-    StarlingBLEFreeBuffer free_buffer
-);
+FOUNDATION_EXPORT void StarlingBLERegisterProvider(id<StarlingBLEProvider> _Nullable provider);
 
 NS_ASSUME_NONNULL_END

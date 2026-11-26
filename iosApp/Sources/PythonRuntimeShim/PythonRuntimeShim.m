@@ -8,7 +8,57 @@ static NSRecursiveLock *runtimeLock;
 static PyObject *runtimeDispatcher;
 static BOOL runtimeInitialized;
 static StarlingBLECallbacks bleCallbacks;
+static id<StarlingBLEProvider> bleProvider;
 static void EnsureRuntimeLock(void);
+
+static void BLEFreeBuffer(uint8_t *buffer) { free(buffer); }
+static int BLEProviderCall(NSString *operation, const uint8_t *first, size_t firstLength,
+                           const uint8_t *second, size_t secondLength,
+                           uint8_t **output, size_t *outputLength,
+                           uint8_t **error, size_t *errorLength) {
+    EnsureRuntimeLock();
+    [runtimeLock lock];
+    id<StarlingBLEProvider> provider = bleProvider;
+    [runtimeLock unlock];
+    if (provider == nil) {
+        const char *message = "iOS BLE callbacks are not registered";
+        size_t length = strlen(message);
+        *error = malloc(length);
+        if (*error != NULL) { memcpy(*error, message, length); *errorLength = length; }
+        return 0;
+    }
+    NSMutableArray<NSData *> *arguments = [NSMutableArray arrayWithCapacity:2];
+    if (first != NULL || firstLength == 0) [arguments addObject:[NSData dataWithBytes:first length:firstLength]];
+    if (second != NULL || secondLength == 0) [arguments addObject:[NSData dataWithBytes:second length:secondLength]];
+    NSDictionary *result = [provider performBLEOperation:operation arguments:arguments];
+    NSString *message = result[@"error"];
+    if (message != nil) {
+        NSData *data = [message dataUsingEncoding:NSUTF8StringEncoding];
+        *error = malloc(data.length);
+        if (*error != NULL) { memcpy(*error, data.bytes, data.length); *errorLength = data.length; }
+        return 0;
+    }
+    NSData *data = result[@"data"];
+    if (output != NULL) {
+        *outputLength = data.length;
+        *output = malloc(MAX((NSUInteger)1, data.length));
+        if (*output == NULL) return 0;
+        if (data.length != 0) memcpy(*output, data.bytes, data.length);
+    }
+    return 1;
+}
+static int BLEStartProvider(const uint8_t *p,size_t n,uint8_t **e,size_t *en){return BLEProviderCall(@"start",p,n,NULL,0,NULL,NULL,e,en);}
+static int BLEIdentityProvider(const uint8_t *p,size_t n,uint8_t **e,size_t *en){return BLEProviderCall(@"set_identity",p,n,NULL,0,NULL,NULL,e,en);}
+static int BLEStopProvider(uint8_t **e,size_t *en){return BLEProviderCall(@"stop",NULL,0,NULL,0,NULL,NULL,e,en);}
+static int BLEStartScanningProvider(uint8_t **e,size_t *en){return BLEProviderCall(@"start_scanning",NULL,0,NULL,0,NULL,NULL,e,en);}
+static int BLEStopScanningProvider(uint8_t **e,size_t *en){return BLEProviderCall(@"stop_scanning",NULL,0,NULL,0,NULL,NULL,e,en);}
+static int BLEStartAdvertisingProvider(uint8_t **e,size_t *en){return BLEProviderCall(@"start_advertising",NULL,0,NULL,0,NULL,NULL,e,en);}
+static int BLEStopAdvertisingProvider(uint8_t **e,size_t *en){return BLEProviderCall(@"stop_advertising",NULL,0,NULL,0,NULL,NULL,e,en);}
+static int BLEConnectProvider(const uint8_t *p,size_t n,uint8_t **e,size_t *en){return BLEProviderCall(@"connect",p,n,NULL,0,NULL,NULL,e,en);}
+static int BLEDisconnectProvider(const uint8_t *p,size_t n,uint8_t **e,size_t *en){return BLEProviderCall(@"disconnect",p,n,NULL,0,NULL,NULL,e,en);}
+static int BLEWriteProvider(const uint8_t *a,size_t an,const uint8_t *b,size_t bn,uint8_t **e,size_t *en){return BLEProviderCall(@"write",a,an,b,bn,NULL,NULL,e,en);}
+static int BLENotifyProvider(const uint8_t *a,size_t an,const uint8_t *b,size_t bn,uint8_t **e,size_t *en){return BLEProviderCall(@"notify",a,an,b,bn,NULL,NULL,e,en);}
+static int BLEDrainProvider(uint8_t **o,size_t *on,uint8_t **e,size_t *en){return BLEProviderCall(@"drain_events",NULL,0,NULL,0,o,on,e,en);}
 
 static PyObject *BLEStart(PyObject *self, PyObject *args);
 static PyObject *BLESetIdentity(PyObject *self, PyObject *args);
@@ -363,35 +413,20 @@ void StarlingBLERegisterCallbacks(const StarlingBLECallbacks *callbacks) {
     [runtimeLock unlock];
 }
 
-void StarlingBLEInstallSwiftCallbacks(StarlingBLEStringCallback start,
-                                     StarlingBLEIdentityCallback set_identity,
-                                     StarlingBLEVoidCallback stop,
-                                     StarlingBLEVoidCallback start_scanning,
-                                     StarlingBLEVoidCallback stop_scanning,
-                                     StarlingBLEVoidCallback start_advertising,
-                                     StarlingBLEVoidCallback stop_advertising,
-                                     StarlingBLEStringCallback connect,
-                                     StarlingBLEStringCallback disconnect,
-                                     StarlingBLEBytesCallback write,
-                                     StarlingBLEBytesCallback notify,
-                                     StarlingBLEDrainCallback drain_events,
-                                     StarlingBLEFreeBuffer free_buffer) {
+void StarlingBLERegisterProvider(id<StarlingBLEProvider> provider) {
     const StarlingBLECallbacks callbacks = {
-        .start = start,
-        .set_identity = set_identity,
-        .stop = stop,
-        .start_scanning = start_scanning,
-        .stop_scanning = stop_scanning,
-        .start_advertising = start_advertising,
-        .stop_advertising = stop_advertising,
-        .connect = connect,
-        .disconnect = disconnect,
-        .write = write,
-        .notify = notify,
-        .drain_events = drain_events,
-        .free_buffer = free_buffer,
+        .start = BLEStartProvider, .set_identity = BLEIdentityProvider, .stop = BLEStopProvider,
+        .start_scanning = BLEStartScanningProvider, .stop_scanning = BLEStopScanningProvider,
+        .start_advertising = BLEStartAdvertisingProvider, .stop_advertising = BLEStopAdvertisingProvider,
+        .connect = BLEConnectProvider, .disconnect = BLEDisconnectProvider,
+        .write = BLEWriteProvider, .notify = BLENotifyProvider,
+        .drain_events = BLEDrainProvider, .free_buffer = BLEFreeBuffer,
     };
-    StarlingBLERegisterCallbacks(&callbacks);
+    EnsureRuntimeLock();
+    [runtimeLock lock];
+    bleProvider = provider;
+    bleCallbacks = provider == nil ? (StarlingBLECallbacks){0} : callbacks;
+    [runtimeLock unlock];
 }
 
 NSString *StarlingPythonInvoke(NSString *command) {
