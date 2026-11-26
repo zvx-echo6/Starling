@@ -41,6 +41,20 @@ typedef struct {
 } StarlingBLECallbacks;
 
 FOUNDATION_EXPORT void StarlingBLERegisterCallbacks(const StarlingBLECallbacks * _Nullable callbacks);
-FOUNDATION_EXPORT void StarlingBLEInstallSwiftCallbacks(void);
+FOUNDATION_EXPORT void StarlingBLEInstallSwiftCallbacks(
+    StarlingBLEStringCallback start,
+    StarlingBLEIdentityCallback set_identity,
+    StarlingBLEVoidCallback stop,
+    StarlingBLEVoidCallback start_scanning,
+    StarlingBLEVoidCallback stop_scanning,
+    StarlingBLEVoidCallback start_advertising,
+    StarlingBLEVoidCallback stop_advertising,
+    StarlingBLEStringCallback connect,
+    StarlingBLEStringCallback disconnect,
+    StarlingBLEBytesCallback write,
+    StarlingBLEBytesCallback notify,
+    StarlingBLEDrainCallback drain_events,
+    StarlingBLEFreeBuffer free_buffer
+);
 
 NS_ASSUME_NONNULL_END

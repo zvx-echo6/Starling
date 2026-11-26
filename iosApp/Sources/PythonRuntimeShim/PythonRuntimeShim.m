@@ -4,20 +4,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-extern int StarlingSwiftBLEStartCallback(const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLESetIdentityCallback(const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEStopCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEStartScanningCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEStopScanningCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEStartAdvertisingCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEStopAdvertisingCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEConnectCallback(const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEDisconnectCallback(const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEWriteCallback(const uint8_t * _Nullable, size_t, const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLENotifyCallback(const uint8_t * _Nullable, size_t, const uint8_t * _Nullable, size_t, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern int StarlingSwiftBLEDrainCallback(uint8_t * _Nullable * _Nullable, size_t * _Nullable, uint8_t * _Nullable * _Nullable, size_t * _Nullable);
-extern void StarlingSwiftBLEFreeCallback(uint8_t * _Nullable);
-
 static NSRecursiveLock *runtimeLock;
 static PyObject *runtimeDispatcher;
 static BOOL runtimeInitialized;
@@ -377,21 +363,33 @@ void StarlingBLERegisterCallbacks(const StarlingBLECallbacks *callbacks) {
     [runtimeLock unlock];
 }
 
-void StarlingBLEInstallSwiftCallbacks(void) {
+void StarlingBLEInstallSwiftCallbacks(StarlingBLEStringCallback start,
+                                     StarlingBLEIdentityCallback set_identity,
+                                     StarlingBLEVoidCallback stop,
+                                     StarlingBLEVoidCallback start_scanning,
+                                     StarlingBLEVoidCallback stop_scanning,
+                                     StarlingBLEVoidCallback start_advertising,
+                                     StarlingBLEVoidCallback stop_advertising,
+                                     StarlingBLEStringCallback connect,
+                                     StarlingBLEStringCallback disconnect,
+                                     StarlingBLEBytesCallback write,
+                                     StarlingBLEBytesCallback notify,
+                                     StarlingBLEDrainCallback drain_events,
+                                     StarlingBLEFreeBuffer free_buffer) {
     const StarlingBLECallbacks callbacks = {
-        .start = StarlingSwiftBLEStartCallback,
-        .set_identity = StarlingSwiftBLESetIdentityCallback,
-        .stop = StarlingSwiftBLEStopCallback,
-        .start_scanning = StarlingSwiftBLEStartScanningCallback,
-        .stop_scanning = StarlingSwiftBLEStopScanningCallback,
-        .start_advertising = StarlingSwiftBLEStartAdvertisingCallback,
-        .stop_advertising = StarlingSwiftBLEStopAdvertisingCallback,
-        .connect = StarlingSwiftBLEConnectCallback,
-        .disconnect = StarlingSwiftBLEDisconnectCallback,
-        .write = StarlingSwiftBLEWriteCallback,
-        .notify = StarlingSwiftBLENotifyCallback,
-        .drain_events = StarlingSwiftBLEDrainCallback,
-        .free_buffer = StarlingSwiftBLEFreeCallback,
+        .start = start,
+        .set_identity = set_identity,
+        .stop = stop,
+        .start_scanning = start_scanning,
+        .stop_scanning = stop_scanning,
+        .start_advertising = start_advertising,
+        .stop_advertising = stop_advertising,
+        .connect = connect,
+        .disconnect = disconnect,
+        .write = write,
+        .notify = notify,
+        .drain_events = drain_events,
+        .free_buffer = free_buffer,
     };
     StarlingBLERegisterCallbacks(&callbacks);
 }
