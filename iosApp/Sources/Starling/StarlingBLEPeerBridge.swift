@@ -114,20 +114,21 @@ final class StarlingBLEPeerBridge: NSObject, CBCentralManagerDelegate, CBPeriphe
     private override init() { super.init() }
 
     func registerCallbacks() {
-        var callbacks = StarlingBLECallbacks()
-        callbacks.start = starlingBLEStartCallback
-        callbacks.set_identity = starlingBLESetIdentityCallback
-        callbacks.stop = starlingBLEStopCallback
-        callbacks.start_scanning = starlingBLEStartScanningCallback
-        callbacks.stop_scanning = starlingBLEStopScanningCallback
-        callbacks.start_advertising = starlingBLEStartAdvertisingCallback
-        callbacks.stop_advertising = starlingBLEStopAdvertisingCallback
-        callbacks.connect = starlingBLEConnectCallback
-        callbacks.disconnect = starlingBLEDisconnectCallback
-        callbacks.write = starlingBLEWriteCallback
-        callbacks.notify = starlingBLENotifyCallback
-        callbacks.drain_events = starlingBLEDrainCallback
-        callbacks.free_buffer = starlingBLEFreeCallback
+        var callbacks = StarlingBLECallbacks(
+            start: starlingBLEStartCallback,
+            set_identity: starlingBLESetIdentityCallback,
+            stop: starlingBLEStopCallback,
+            start_scanning: starlingBLEStartScanningCallback,
+            stop_scanning: starlingBLEStopScanningCallback,
+            start_advertising: starlingBLEStartAdvertisingCallback,
+            stop_advertising: starlingBLEStopAdvertisingCallback,
+            connect: starlingBLEConnectCallback,
+            disconnect: starlingBLEDisconnectCallback,
+            write: starlingBLEWriteCallback,
+            notify: starlingBLENotifyCallback,
+            drain_events: starlingBLEDrainCallback,
+            free_buffer: starlingBLEFreeCallback
+        )
         StarlingBLERegisterCallbacks(&callbacks)
     }
 
