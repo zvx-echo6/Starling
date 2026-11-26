@@ -3,67 +3,67 @@ import Foundation
 import PythonRuntimeShim
 
 @_cdecl("StarlingSwiftBLEStartCallback")
-private func starlingBLEStartCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStartCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.startCallback(p, n, e, en)
 }
 
 @_cdecl("StarlingSwiftBLESetIdentityCallback")
-private func starlingBLESetIdentityCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLESetIdentityCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.setIdentityCallback(p, n, e, en)
 }
 
 @_cdecl("StarlingSwiftBLEStopCallback")
-private func starlingBLEStopCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStopCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.stopCallback(e, n)
 }
 
 @_cdecl("StarlingSwiftBLEStartScanningCallback")
-private func starlingBLEStartScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStartScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.startScanningCallback(e, n)
 }
 
 @_cdecl("StarlingSwiftBLEStopScanningCallback")
-private func starlingBLEStopScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStopScanningCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.stopScanningCallback(e, n)
 }
 
 @_cdecl("StarlingSwiftBLEStartAdvertisingCallback")
-private func starlingBLEStartAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStartAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.startAdvertisingCallback(e, n)
 }
 
 @_cdecl("StarlingSwiftBLEStopAdvertisingCallback")
-private func starlingBLEStopAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEStopAdvertisingCallback(_ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.stopAdvertisingCallback(e, n)
 }
 
 @_cdecl("StarlingSwiftBLEConnectCallback")
-private func starlingBLEConnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEConnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.connectCallback(p, n, e, en)
 }
 
 @_cdecl("StarlingSwiftBLEDisconnectCallback")
-private func starlingBLEDisconnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEDisconnectCallback(_ p: UnsafePointer<UInt8>?, _ n: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.disconnectCallback(p, n, e, en)
 }
 
 @_cdecl("StarlingSwiftBLEWriteCallback")
-private func starlingBLEWriteCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEWriteCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.writeCallback(a, an, b, bn, e, en)
 }
 
 @_cdecl("StarlingSwiftBLENotifyCallback")
-private func starlingBLENotifyCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLENotifyCallback(_ a: UnsafePointer<UInt8>?, _ an: Int, _ b: UnsafePointer<UInt8>?, _ bn: Int, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.notifyCallback(a, an, b, bn, e, en)
 }
 
 @_cdecl("StarlingSwiftBLEDrainCallback")
-private func starlingBLEDrainCallback(_ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
+public func starlingBLEDrainCallback(_ out: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ n: UnsafeMutablePointer<Int>?, _ e: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, _ en: UnsafeMutablePointer<Int>?) -> Int32 {
     StarlingBLEPeerBridge.drainCallback(out, n, e, en)
 }
 
 @_cdecl("StarlingSwiftBLEFreeCallback")
-private func starlingBLEFreeCallback(_ p: UnsafeMutablePointer<UInt8>?) {
+public func starlingBLEFreeCallback(_ p: UnsafeMutablePointer<UInt8>?) {
     StarlingBLEPeerBridge.freeCallback(p)
 }
 
