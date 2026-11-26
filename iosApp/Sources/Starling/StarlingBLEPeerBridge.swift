@@ -50,8 +50,8 @@ final class StarlingBLEPeerBridge: NSObject, StarlingBLEProvider, CBCentralManag
 
     func registerCallbacks() { StarlingBLERegisterProvider(self) }
 
-    func performBLEOperation(_ operation: String, arguments: [Data]) -> NSDictionary {
-        func response(_ error: String? = nil, data: Data = Data()) -> NSDictionary {
+    func performBLEOperation(_ operation: String, arguments: [Data]) -> [String: Any] {
+        func response(_ error: String? = nil, data: Data = Data()) -> [String: Any] {
             if let error { return ["error": error] }
             return ["data": data]
         }
@@ -59,19 +59,19 @@ final class StarlingBLEPeerBridge: NSObject, StarlingBLEProvider, CBCentralManag
         switch operation {
         case "start":
             guard let config = try? JSONSerialization.jsonObject(with: first) as? [String: Any] else { return response("invalid BLE start configuration") }
-            return response(shared.start(config))
-        case "set_identity": return response(first.count == 16 ? shared.setIdentity(first) : "identity must be exactly 16 bytes")
-        case "stop": shared.stop(); return response()
-        case "start_scanning": return response(shared.setScanning(true))
-        case "stop_scanning": return response(shared.setScanning(false))
-        case "start_advertising": return response(shared.setAdvertising(true))
-        case "stop_advertising": return response(shared.setAdvertising(false))
-        case "connect": return response(shared.connect(String(decoding: first, as: UTF8.self)))
-        case "disconnect": shared.disconnect(String(decoding: first, as: UTF8.self)); return response()
-        case "write": return response(shared.write(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
-        case "notify": return response(shared.notify(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
+            return response(StarlingBLEPeerBridge.shared.start(config))
+        case "set_identity": return response(first.count == 16 ? StarlingBLEPeerBridge.shared.setIdentity(first) : "identity must be exactly 16 bytes")
+        case "stop": StarlingBLEPeerBridge.shared.stop(); return response()
+        case "start_scanning": return response(StarlingBLEPeerBridge.shared.setScanning(true))
+        case "stop_scanning": return response(StarlingBLEPeerBridge.shared.setScanning(false))
+        case "start_advertising": return response(StarlingBLEPeerBridge.shared.setAdvertising(true))
+        case "stop_advertising": return response(StarlingBLEPeerBridge.shared.setAdvertising(false))
+        case "connect": return response(StarlingBLEPeerBridge.shared.connect(String(decoding: first, as: UTF8.self)))
+        case "disconnect": StarlingBLEPeerBridge.shared.disconnect(String(decoding: first, as: UTF8.self)); return response()
+        case "write": return response(StarlingBLEPeerBridge.shared.write(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
+        case "notify": return response(StarlingBLEPeerBridge.shared.notify(String(decoding: first, as: UTF8.self), arguments.count > 1 ? arguments[1] : Data()))
         case "drain_events":
-            let data = (try? JSONSerialization.data(withJSONObject: shared.drain(), options: [.fragmentsAllowed])) ?? Data("[]".utf8)
+            let data = (try? JSONSerialization.data(withJSONObject: StarlingBLEPeerBridge.shared.drain(), options: [.fragmentsAllowed])) ?? Data("[]".utf8)
             return response(nil, data: data)
         default: return response("unknown BLE operation")
         }
