@@ -479,7 +479,6 @@ class ReticulumNodeService : Service() {
             val error = rnodeBluetoothBridge.start(
                 target = rnodeBleTarget(selected.optString("port")),
                 displayName = selected.optString(RNODE_BLE_NAME_KEY).takeIf(String::isNotBlank),
-                pairedByStarling = selected.optBoolean(RNODE_PAIRED_BY_STARLING_KEY, false),
             )
             if (error != null) throw IllegalStateException(error)
             resolvedBleRNode = rnodeBluetoothBridge.resolvedDevice
