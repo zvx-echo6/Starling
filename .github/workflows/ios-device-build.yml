@@ -14,7 +14,7 @@ concurrency:
 jobs:
   build:
     if: github.event.repository.fork == true
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
       - name: Check out source
