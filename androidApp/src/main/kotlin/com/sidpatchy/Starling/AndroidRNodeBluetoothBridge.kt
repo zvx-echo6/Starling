@@ -269,10 +269,10 @@ internal class AndroidRNodeBluetoothBridge(context: Context) {
      *
      * A [target] that is a device address is connected to directly. A device
      * name, or an empty target for the first RNode found, is located by
-     * scanning. [pairedByStarling] makes a missing system pairing an error
-     * before any connection is attempted.
+     * scanning. Android reports stale bond state in the node service process,
+     * so connection security is resolved by the GATT connection itself.
      */
-    fun start(target: String, displayName: String? = null, pairedByStarling: Boolean = false): String? {
+    fun start(target: String, displayName: String? = null): String? {
         val trimmedTarget = target.trim()
         val address = trimmedTarget.uppercase().takeIf { BluetoothAdapter.checkBluetoothAddress(it) }
         val targetName = if (address == null) trimmedTarget else ""
@@ -303,11 +303,6 @@ internal class AndroidRNodeBluetoothBridge(context: Context) {
                 val device = adapter.getRemoteDevice(address)
                 if (displayName.isNullOrBlank()) {
                     runCatching { device.name }.getOrNull()?.takeIf(String::isNotBlank)?.let { label = it }
-                }
-                val isBonded = device.bondState == BluetoothDevice.BOND_BONDED ||
-                    adapter.bondedDevices.any { it.address.equals(address, ignoreCase = true) }
-                if (pairedByStarling && !isBonded) {
-                    return stopWithError(RNodeBleText.pairingLost(label))
                 }
                 val connection = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
                     ?: return stopWithError(RNodeBleText.notFound(label))
