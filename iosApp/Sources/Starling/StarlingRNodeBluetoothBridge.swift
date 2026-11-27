@@ -298,7 +298,7 @@ final class StarlingRNodeBluetoothBridge: NSObject, CBCentralManagerDelegate, CB
                 host: .ipv4(.loopback),
                 port: Self.tcpPort
             )
-            let listener = try NWListener(using: parameters, on: Self.tcpPort)
+            let listener = try NWListener(using: parameters)
             listener.newConnectionHandler = { [weak self] connection in
                 self?.accept(connection)
             }
