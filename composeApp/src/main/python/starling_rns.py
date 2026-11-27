@@ -24,6 +24,7 @@ _BLE_PEER_INTERFACE_NAME = "Starling BLE Peers"
 
 
 def _trace(config_dir, message):
+    os.makedirs(config_dir, exist_ok=True)
     with open(os.path.join(config_dir, "startup-trace.log"), "a", encoding="ascii") as trace:
         trace.write(message + "\n")
         trace.flush()

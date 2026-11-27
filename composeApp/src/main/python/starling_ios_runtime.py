@@ -24,6 +24,7 @@ _last_self_event = None
 
 
 def _trace(data_dir, message):
+    os.makedirs(data_dir, exist_ok=True)
     with open(os.path.join(data_dir, "startup-trace.log"), "a", encoding="ascii") as trace:
         trace.write(message + "\n")
         trace.flush()
