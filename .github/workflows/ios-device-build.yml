@@ -12,43 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  android-test:
-    if: github.event.repository.fork == true
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Set up Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.13'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: platform-tools platforms;android-37.0 build-tools;37.0.0
-
-      - name: Build release APK
-        run: ./gradlew --no-daemon -PstarlingVersion=0.1.0-test -PstarlingVersionCode=999999 :androidApp:assembleRelease
-
-      - name: Upload unsigned APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: starling-android-bond-test-unsigned
-          path: androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk
-          if-no-files-found: error
-
   build:
     if: github.event.repository.fork == true
     runs-on: macos-latest
@@ -175,8 +138,8 @@ jobs:
           security import "$work/development.p12" -P "$IOS_DEV_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
           security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
           security list-keychains -d user -s "$keychain"
-          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/"Apple Development:/ { print $2; exit }')"
-          if [[ -z "$identity" ]]; then echo '::error::No Apple Development signing identity found in the supplied certificate.'; exit 1; fi
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -F '"' '/"(Apple Development|iPhone Developer):/ { print $2; exit }')"
+          if [[ -z "$identity" ]]; then echo '::error::No Apple Development or iPhone Developer signing identity found in the supplied certificate.'; exit 1; fi
           echo "signing_identity=$identity" >> "$GITHUB_OUTPUT"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$work/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
@@ -188,7 +151,7 @@ jobs:
           STARLING_COMPOSE_CONFIGURATION: release
         run: xtool dev generate-xcode-project
 
-      - name: Build app with development signing
+      - name: Build app unsigned, then sign packaged app
         env:
           STARLING_COMPOSE_CONFIGURATION: release
           TEAM_ID: ${{ steps.profile.outputs.team_id }}
@@ -203,10 +166,7 @@ jobs:
             -project xtool/.xtool-tmp/Starling.xcodeproj \
             -scheme Starling-App -configuration Release -sdk iphoneos \
             -destination 'generic/platform=iOS' -derivedDataPath "$derived_data" \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" build
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
           product_directory="$derived_data/Build/Products/Release-iphoneos"
           app_path="$(find "$product_directory" -maxdepth 1 -type d -name '*.app' -print -quit)"
           test -n "$app_path"
@@ -222,8 +182,53 @@ jobs:
           security cms -D -i "$RUNNER_TEMP/starling-signing/profile.mobileprovision" > "$RUNNER_TEMP/starling-signing/profile.plist"
           /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$RUNNER_TEMP/starling-signing/profile.plist" > "$RUNNER_TEMP/starling-signing/entitlements.plist"
           cp "$RUNNER_TEMP/starling-signing/profile.mobileprovision" "$app_path/embedded.mobileprovision"
-          codesign --force --deep --sign "$SIGNING_IDENTITY" --entitlements "$RUNNER_TEMP/starling-signing/entitlements.plist" "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
+          # Sign every embedded Mach-O leaf and code bundle deterministically, deepest first.
+          python3 -I - "$app_path" > "$temp/code-items.txt" <<'PY'
+          import os, plistlib, subprocess, sys
+          root = sys.argv[1]
+          items = set()
+          macho_files = set()
+          for current, dirs, files in os.walk(root):
+              dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(current, d))]
+              for name in files:
+                  path = os.path.join(current, name)
+                  if os.path.islink(path):
+                      continue
+                  kind = subprocess.run(["file", "-b", path], text=True, capture_output=True, check=True).stdout
+                  if "Mach-O" in kind:
+                      macho_files.add(path)
+              for directory in dirs:
+                  path = os.path.join(current, directory)
+                  if not directory.endswith((".framework", ".appex", ".xpc", ".app")):
+                      continue
+                  info = os.path.join(path, "Info.plist")
+                  if not os.path.isfile(info):
+                      continue
+                  try:
+                      executable = plistlib.load(open(info, "rb")).get("CFBundleExecutable")
+                  except Exception:
+                      continue
+                  binary = os.path.join(path, executable) if executable else ""
+                  if binary in macho_files or (binary and os.path.isfile(binary) and "Mach-O" in subprocess.run(["file", "-b", binary], text=True, capture_output=True, check=True).stdout):
+                      items.add(path)
+          # Bundle executables are signed as part of their bundle, never separately.
+          bundle_bins = set()
+          for bundle in items:
+              info = plistlib.load(open(os.path.join(bundle, "Info.plist"), "rb"))
+              if info.get("CFBundleExecutable"):
+                  bundle_bins.add(os.path.join(bundle, info["CFBundleExecutable"]))
+          items.update(macho_files - bundle_bins)
+          for path in sorted(items, key=lambda p: (p.count(os.sep), p), reverse=True):
+              print(path)
+          PY
+          while IFS= read -r code_path; do
+            codesign --force --sign "$SIGNING_IDENTITY" "$code_path"
+          done < "$temp/code-items.txt"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$RUNNER_TEMP/starling-signing/entitlements.plist" "$app_path"
+          while IFS= read -r code_path; do
+            codesign --verify --strict --verbose=2 "$code_path"
+          done < "$temp/code-items.txt"
+          codesign --verify --strict --verbose=2 "$app_path"
           ditto -c -k --sequesterRsrc --keepParent "$temp/Payload" artifacts/Starling-development.ipa
 
       - name: Verify signed IPA
@@ -240,9 +245,35 @@ jobs:
           actual_bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")
           [[ "$actual_bundle_id" == "$EXPECTED_BUNDLE_ID" ]]
           test -s "$app_path/embedded.mobileprovision"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
+          python3 -I - "$app_path" > "$temp/code-items.txt" <<'PY'
+          import os, plistlib, subprocess, sys
+          root = sys.argv[1]
+          items, macho_files = set(), set()
+          for current, dirs, files in os.walk(root):
+              dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(current, d))]
+              for name in files:
+                  path = os.path.join(current, name)
+                  if not os.path.islink(path) and "Mach-O" in subprocess.run(["file", "-b", path], text=True, capture_output=True, check=True).stdout:
+                      macho_files.add(path)
+              for name in dirs:
+                  path = os.path.join(current, name)
+                  if not name.endswith((".framework", ".appex", ".xpc", ".app")) or not os.path.isfile(os.path.join(path, "Info.plist")):
+                      continue
+                  info = plistlib.load(open(os.path.join(path, "Info.plist"), "rb"))
+                  binary = os.path.join(path, info["CFBundleExecutable"]) if info.get("CFBundleExecutable") else ""
+                  if binary in macho_files or (binary and os.path.isfile(binary) and "Mach-O" in subprocess.run(["file", "-b", binary], text=True, capture_output=True, check=True).stdout):
+                      items.add(path)
+          bundle_bins = {os.path.join(p, plistlib.load(open(os.path.join(p, "Info.plist"), "rb"))["CFBundleExecutable"]) for p in items if plistlib.load(open(os.path.join(p, "Info.plist"), "rb")).get("CFBundleExecutable")}
+          items.update(macho_files - bundle_bins)
+          for path in sorted(items, key=lambda p: (p.count(os.sep), p), reverse=True):
+              print(path)
+          PY
+          while IFS= read -r code_path; do
+            codesign --verify --strict --verbose=2 "$code_path"
+          done < "$temp/code-items.txt"
+          codesign --verify --strict --verbose=2 "$app_path"
           codesign -dvv "$app_path" 2> "$temp/signature.txt"
-          grep -F "Authority=Apple Development:" "$temp/signature.txt"
+          grep -E 'Authority=(Apple Development|iPhone Developer):' "$temp/signature.txt"
           security cms -D -i "$app_path/embedded.mobileprovision" > "$temp/profile.plist"
           profile_app_id=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$temp/profile.plist")
           profile_bundle_id="${profile_app_id#*.}"
