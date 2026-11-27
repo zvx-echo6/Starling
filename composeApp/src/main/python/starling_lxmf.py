@@ -1,6 +1,7 @@
 """LXMF direct-delivery adapter using the reference LXMF router."""
 
 import base64
+import os
 import queue
 import re
 import sys
@@ -55,7 +56,13 @@ def start(config_dir, display_name="Starling"):
     import LXMF
     import RNS
 
+    def trace(message):
+        with open(os.path.join(config_dir, "startup-trace.log"), "a", encoding="ascii") as output:
+            output.write(message + "\n")
+            output.flush()
+
     with _lock:
+        trace("lxmf:lock")
         if _router is not None and _delivery_destination is not None:
             return local_address()
 
@@ -69,23 +76,29 @@ def start(config_dir, display_name="Starling"):
         delivery_destination = None
         announce_handler = None
         try:
+            trace("lxmf:router:before")
             router = starling_rns.construct_without_required_process_signals(lambda: LXMF.LXMRouter(
                 identity=_identity,
                 storagepath=config_dir,
                 name="Starling",
                 autopeer=False,
             ))
+            trace("lxmf:router:after")
             _display_name = _normalize_display_name(display_name)
             delivery_destination = router.register_delivery_identity(
                 _identity,
                 display_name=_display_name,
             )
+            trace("lxmf:identity")
             if delivery_destination is None:
                 raise RuntimeError("LXMF could not register Starling's delivery identity")
             router.register_delivery_callback(_delivery_received)
+            trace("lxmf:callback")
             announce_handler = _NearbyAnnounceHandler()
             RNS.Transport.register_announce_handler(announce_handler)
+            trace("lxmf:handler")
             router.announce(delivery_destination.hash)
+            trace("lxmf:announce")
         except Exception:
             if announce_handler is not None:
                 try:

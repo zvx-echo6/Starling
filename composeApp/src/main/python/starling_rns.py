@@ -23,6 +23,12 @@ _config_dir = None
 _BLE_PEER_INTERFACE_NAME = "Starling BLE Peers"
 
 
+def _trace(config_dir, message):
+    with open(os.path.join(config_dir, "startup-trace.log"), "a", encoding="ascii") as trace:
+        trace.write(message + "\n")
+        trace.flush()
+
+
 def construct_without_required_process_signals(factory):
     """Allow service-owned runtimes to initialize outside Python's main thread.
 
@@ -156,7 +162,9 @@ def start_node(config_dir, mode, tcp_peers="[]", rpc_key_hex="", rnode_interface
     import RNS
     from starling_identity import load_identity
 
+    _trace(config_dir, "rns:start")
     load_identity(config_dir)
+    _trace(config_dir, "rns:identity")
 
     if mode not in ("embedded", "existing_shared_instance"):
         raise ValueError("Unsupported Reticulum runtime mode")
@@ -262,6 +270,7 @@ def start_node(config_dir, mode, tcp_peers="[]", rpc_key_hex="", rnode_interface
             raise ValueError("Bluetooth peer support is not installed")
         if not driver.has_bridge():
             raise ValueError("The Bluetooth peer bridge is not available")
+        _trace(config_dir, "rns:ble:bridge")
     if mode == "existing_shared_instance":
         normalized_peers = []
         normalized_rnodes = []
@@ -317,18 +326,24 @@ def start_node(config_dir, mode, tcp_peers="[]", rpc_key_hex="", rnode_interface
     if android_platform and normalized_rnodes:
         _install_android_tcp_rnode_compat()
     _write_config(config_dir, mode, normalized_peers, normalized_rnodes, rpc_key_hex, android_platform, ble_peers, ble_driver)
+    _trace(config_dir, "rns:config")
+    _trace(config_dir, "rns:construct:before")
     _reticulum = construct_without_required_process_signals(lambda: RNS.Reticulum(
         configdir=config_dir,
         loglevel=RNS.LOG_NOTICE,
         require_shared_instance=(mode == "existing_shared_instance"),
     ))
+    _trace(config_dir, "rns:construct:after")
     _mode = mode
     _tcp_peers = normalized_peers
     _rnode_interfaces = normalized_rnodes
     _ble_peers = ble_peers
     _rpc_key_hex = rpc_key_hex or None
     _config_dir = config_dir
-    return status()
+    _trace(config_dir, "rns:status:before")
+    result = status()
+    _trace(config_dir, "rns:status:after")
+    return result
 
 
 def _disconnect_configured_interfaces():

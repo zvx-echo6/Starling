@@ -5,6 +5,7 @@ the existing Reticulum, RRC, and LXMF protocol implementations.
 """
 
 import json
+import os
 
 from starling_bridge_protocol import (
     decode as _decode,
@@ -20,6 +21,12 @@ _rns = None
 _rrc = None
 _lxmf = None
 _last_self_event = None
+
+
+def _trace(data_dir, message):
+    with open(os.path.join(data_dir, "startup-trace.log"), "a", encoding="ascii") as trace:
+        trace.write(message + "\n")
+        trace.flush()
 
 
 def _prepare_rnode_interfaces(radios):
@@ -80,29 +87,39 @@ def _start(fields):
         raise ValueError("Incomplete iOS Reticulum start request.")
 
     data_dir = _decode(fields[1])
+    _trace(data_dir, "runtime:start")
     start = ["START"] + fields[2:]
     mode, rpc_key_hex, peers, radios, ble_peers = parse_start_request(start, platform="iOS")
+    _trace(data_dir, "runtime:parsed")
     radios = _prepare_rnode_interfaces(radios)
 
     import starling_lxmf
     import starling_rns
     import starling_rrc
+    _trace(data_dir, "runtime:imports")
 
     _rns = starling_rns
     _rrc = starling_rrc
     _lxmf = starling_lxmf
     try:
+        _trace(data_dir, "runtime:rns:before")
         json.loads(_rns.start_node(data_dir, mode, peers, rpc_key_hex, radios,
                                    allow_reconfigure=True, ble_peers=ble_peers))
+        _trace(data_dir, "runtime:rns:after")
 
         lxmf_error = None
         try:
+            _trace(data_dir, "runtime:lxmf:before")
             _lxmf.start(data_dir)
+            _trace(data_dir, "runtime:lxmf:after")
         except Exception as error:
             lxmf_error = str(error) or "Could not start LXMF."
+            _trace(data_dir, "runtime:lxmf:error")
 
         _last_self_event = None
+        _trace(data_dir, "runtime:status:before")
         ready = status_line(_rns).replace("STATUS\t", "READY\t", 1)
+        _trace(data_dir, "runtime:status:after")
         response = [ready]
         if lxmf_error:
             response.append("EVENT\tLXMF_ERROR\t{}\t".format(_encode(lxmf_error)))
