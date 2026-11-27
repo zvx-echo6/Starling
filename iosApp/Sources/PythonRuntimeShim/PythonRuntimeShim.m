@@ -5,6 +5,10 @@
 #include <stdlib.h>
 
 static NSRecursiveLock *runtimeLock;
+// Python background threads enter BLE callbacks with the GIL held. They must
+// never acquire runtimeLock: an invocation holds it while Python may release
+// and reacquire the GIL. Protect only the callback registry with this lock.
+static NSLock *bleRegistryLock;
 static PyObject *runtimeDispatcher;
 static BOOL runtimeInitialized;
 static StarlingBLECallbacks bleCallbacks;
@@ -17,9 +21,9 @@ static int BLEProviderCall(NSString *operation, const uint8_t *first, size_t fir
                            uint8_t **output, size_t *outputLength,
                            uint8_t **error, size_t *errorLength) {
     EnsureRuntimeLock();
-    [runtimeLock lock];
+    [bleRegistryLock lock];
     id<StarlingBLEProvider> provider = bleProvider;
-    [runtimeLock unlock];
+    [bleRegistryLock unlock];
     if (provider == nil) {
         const char *message = "iOS BLE callbacks are not registered";
         size_t length = strlen(message);
@@ -88,9 +92,9 @@ static PyObject *CreateBLEModule(void) { return PyModule_Create(&bleModule); }
 
 static StarlingBLECallbacks BLECallbacksSnapshot(void) {
     EnsureRuntimeLock();
-    [runtimeLock lock];
+    [bleRegistryLock lock];
     StarlingBLECallbacks callbacks = bleCallbacks;
-    [runtimeLock unlock];
+    [bleRegistryLock unlock];
     return callbacks;
 }
 
@@ -255,6 +259,7 @@ static void EnsureRuntimeLock(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         runtimeLock = [[NSRecursiveLock alloc] init];
+        bleRegistryLock = [[NSLock alloc] init];
     });
 }
 
@@ -407,10 +412,10 @@ NSString * _Nullable StarlingPythonInitialize(NSString *pythonHome, NSString *mo
 
 void StarlingBLERegisterCallbacks(const StarlingBLECallbacks *callbacks) {
     EnsureRuntimeLock();
-    [runtimeLock lock];
+    [bleRegistryLock lock];
     if (callbacks == NULL) memset(&bleCallbacks, 0, sizeof(bleCallbacks));
     else bleCallbacks = *callbacks;
-    [runtimeLock unlock];
+    [bleRegistryLock unlock];
 }
 
 void StarlingBLERegisterProvider(id<StarlingBLEProvider> provider) {
@@ -423,10 +428,10 @@ void StarlingBLERegisterProvider(id<StarlingBLEProvider> provider) {
         .drain_events = BLEDrainProvider, .free_buffer = BLEFreeBuffer,
     };
     EnsureRuntimeLock();
-    [runtimeLock lock];
+    [bleRegistryLock lock];
     bleProvider = provider;
     bleCallbacks = provider == nil ? (StarlingBLECallbacks){0} : callbacks;
-    [runtimeLock unlock];
+    [bleRegistryLock unlock];
 }
 
 NSString *StarlingPythonInvoke(NSString *command) {
